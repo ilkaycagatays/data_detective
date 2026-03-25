@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Veri Dedektifi</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0d0f14;
+    --bg2: #13161e;
+    --bg3: #1a1e28;
+    --border: #252933;
+    --border2: #2f3545;
+    --accent: #4f8ef7;
+    --accent2: #7eb8ff;
+    --green: #3ecf8e;
+    --amber: #f5a623;
+    --red: #e25555;
+    --purple: #a78bfa;
+    --text: #e8eaf0;
+    --text2: #8892a4;
+    --text3: #5a6478;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; height: 100%; }
+
+  #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* TOP BAR */
+  #topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 24px; height: 52px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--accent); letter-spacing: -0.02em; }
+  .logo span { color: var(--text3); }
+  #topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); }
+  .status-dot.ready { background: var(--green); }
+  #file-status { font-size: 12px; color: var(--text2); font-family: var(--mono); }
+
+  /* LAYOUT */
+  #body { display: flex; flex: 1; overflow: hidden; }
+  #sidebar { width: 260px; min-width: 260px; border-right: 1px solid var(--border); background: var(--bg2); display: flex; flex-direction: column; overflow-y: auto; }
+  #main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+  /* SIDEBAR */
+  .sb-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sb-title { font-size: 10px; font-weight: 500; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; font-family: var(--mono); }
+
+  /* DROP ZONE */
+  #dropzone {
+    border: 1.5px dashed var(--border2);
+    border-radius: 8px;
+    padding: 20px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--bg3);
+  }
+  #dropzone:hover, #dropzone.drag { border-color: var(--accent); background: rgba(79,142,247,0.06); }
+  #dropzone .dz-icon { font-size: 24px; margin-bottom: 8px; }
+  #dropzone p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  #dropzone p strong { color: var(--accent); }
+  #file-input { display: none; }
+
+  /* COLUMN LIST */
+  #col-list { display: flex; flex-direction: column; gap: 4px; }
+  .col-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 8px; border-radius: 5px; cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+  }
+  .col-item:hover { background: var(--bg3); }
+  .col-item.selected { background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.3); }
+  .col-name { font-family: var(--mono); font-size: 12px; color: var(--text); }
+  .col-type { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-family: var(--mono); }
+  .type-num { background: rgba(62,207,142,0.15); color: var(--green); }
+  .type-str { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .type-date { background: rgba(245,166,35,0.15); color: var(--amber); }
+
+  /* FILTER PANEL */
+  .filter-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .filter-row label { font-size: 11px; color: var(--text2); min-width: 60px; }
+  .filter-row select, .filter-row input[type=range] { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; color: var(--text); font-size: 12px; padding: 4px 6px; font-family: var(--mono); }
+  .filter-row input[type=range] { padding: 0; accent-color: var(--accent); }
+  .filter-val { font-size: 11px; font-family: var(--mono); color: var(--accent); min-width: 30px; text-align: right; }
+
+  /* MAIN TABS */
+  #tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg2); padding: 0 24px; }
+  .tab { padding: 12px 16px; font-size: 13px; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* TAB PANELS */
+  .tab-panel { display: none; padding: 24px; }
+  .tab-panel.active { display: block; }
+
+  /* SECTION HEADERS */
+  .sec-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .sec-header h2 { font-size: 15px; font-weight: 500; color: var(--text); }
+  .badge { font-size: 10px; font-family: var(--mono); padding: 2px 7px; border-radius: 3px; }
+  .badge-blue { background: rgba(79,142,247,0.2); color: var(--accent2); }
+  .badge-green { background: rgba(62,207,142,0.2); color: var(--green); }
+  .badge-red { background: rgba(226,85,85,0.2); color: var(--red); }
+  .badge-amber { background: rgba(245,166,35,0.2); color: var(--amber); }
+
+  /* STAT CARDS */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .stat-label { font-size: 10px; font-family: var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .stat-val { font-size: 22px; font-weight: 300; font-family: var(--mono); color: var(--text); }
+  .stat-val.green { color: var(--green); }
+  .stat-val.amber { color: var(--amber); }
+  .stat-val.red { color: var(--red); }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 3px; }
+
+  /* DATA TABLE */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th { background: var(--bg3); color: var(--text2); font-weight: 500; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .null-cell { color: var(--text3); font-style: italic; }
+  .anomaly-cell { color: var(--red); }
+
+  /* CHARTS */
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .chart-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .chart-title { font-size: 12px; color: var(--text2); margin-bottom: 12px; font-family: var(--mono); }
+  .chart-wrap { position: relative; height: 200px; }
+
+  /* ANOMALY CARDS */
+  .anomaly-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .anomaly-card { background: var(--bg3); border: 1px solid rgba(226,85,85,0.3); border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 12px; }
+  .anomaly-icon { width: 28px; height: 28px; border-radius: 6px; background: rgba(226,85,85,0.15); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+  .anomaly-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .anomaly-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .severity { font-size: 10px; font-family: var(--mono); padding: 2px 7px; border-radius: 3px; margin-left: 8px; }
+  .sev-high { background: rgba(226,85,85,0.2); color: var(--red); }
+  .sev-med { background: rgba(245,166,35,0.2); color: var(--amber); }
+  .sev-low { background: rgba(62,207,142,0.2); color: var(--green); }
+
+  /* AI INSIGHTS */
+  .insight-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .insight-card { background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 12px 16px; border-left: 3px solid var(--accent); }
+  .insight-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+  .insight-meta { font-size: 11px; color: var(--text3); margin-top: 4px; font-family: var(--mono); }
+
+  /* CHAT */
+  #chat-wrap { display: flex; flex-direction: column; gap: 0; height: calc(100vh - 200px); min-height: 400px; }
+  #chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { display: flex; gap: 10px; align-items: flex-start; }
+  .msg.user { flex-direction: row-reverse; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--mono); font-weight: 500; flex-shrink: 0; }
+  .msg.user .msg-avatar { background: rgba(79,142,247,0.2); color: var(--accent); }
+  .msg.ai .msg-avatar { background: rgba(62,207,142,0.2); color: var(--green); }
+  .msg-bubble { max-width: 75%; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+  .msg.user .msg-bubble { background: rgba(79,142,247,0.15); border: 1px solid rgba(79,142,247,0.25); color: var(--text); }
+  .msg.ai .msg-bubble { background: var(--bg3); border: 1px solid var(--border2); color: var(--text); }
+  .msg.ai .msg-bubble.loading { color: var(--text2); font-style: italic; }
+  #chat-input-row { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg2); }
+  #chat-input { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; color: var(--text); font-family: var(--sans); font-size: 13px; padding: 8px 12px; outline: none; transition: border-color 0.15s; }
+  #chat-input:focus { border-color: var(--accent); }
+  #chat-send { background: var(--accent); border: none; border-radius: 6px; color: #fff; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: var(--sans); font-weight: 500; transition: background 0.15s; }
+  #chat-send:hover { background: var(--accent2); }
+  #chat-send:disabled { opacity: 0.4; cursor: default; }
+
+  /* VIZ SUGGESTIONS */
+  .viz-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .viz-card { background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 14px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .viz-card:hover { border-color: var(--accent); background: rgba(79,142,247,0.05); }
+  .viz-type { font-size: 11px; font-family: var(--mono); color: var(--accent); margin-bottom: 6px; }
+  .viz-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .viz-why { font-size: 11px; color: var(--text3); margin-top: 6px; font-style: italic; }
+
+  /* EMPTY STATE */
+  .empty { text-align: center; padding: 60px 20px; }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.3; }
+  .empty h3 { font-size: 15px; color: var(--text2); margin-bottom: 6px; }
+  .empty p { font-size: 13px; color: var(--text3); }
+
+  /* LOADING */
+  .ai-loading { display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: var(--text2); font-size: 13px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* PROGRESS BAR (missing data) */
+  .miss-bar-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .miss-col { font-family: var(--mono); font-size: 11px; color: var(--text2); width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .miss-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .miss-fill { height: 100%; border-radius: 3px; }
+  .miss-pct { font-family: var(--mono); font-size: 11px; color: var(--text2); min-width: 34px; text-align: right; }
+
+  .run-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; font-family: var(--sans); cursor: pointer; font-weight: 500; transition: background 0.15s; margin-bottom: 16px; }
+  .run-btn:hover { background: var(--accent2); }
+  .run-btn:disabled { opacity: 0.4; cursor: default; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="logo">veri<span>//</span>dedektifi</div>
+    <div id="topbar-right">
+      <div class="status-dot" id="status-dot"></div>
+      <div id="file-status">dosya bekleniyor</div>
+    </div>
+  </div>
+
+  <div id="body">
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="sb-section">
+        <div class="sb-title">Veri kaynağı</div>
+        <div id="dropzone" onclick="document.getElementById('file-input').click()" ondragover="e=>{e.preventDefault();this.classList.add('drag')}" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+          <div class="dz-icon">📂</div>
+          <p>CSV veya Excel dosyasını <strong>sürükle / tıkla</strong></p>
+          <p style="margin-top:4px;font-size:11px;color:var(--text3);">.csv · .xlsx · .xls</p>
+        </div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" onchange="loadFile(this.files[0])" />
+      </div>
+
+      <div class="sb-section" id="col-section" style="display:none">
+        <div class="sb-title">Sütunlar <span id="col-count" style="color:var(--text3)"></span></div>
+        <div id="col-list"></div>
+      </div>
+
+      <div class="sb-section" id="filter-section" style="display:none">
+        <div class="sb-title">Filtreler</div>
+        <div class="filter-row">
+          <label>Satır sınırı</label>
+          <input type="range" min="10" max="1000" step="10" value="200" id="row-limit" oninput="document.getElementById('row-limit-val').textContent=this.value;applyFilters()" />
+          <span class="filter-val" id="row-limit-val">200</span>
+        </div>
+        <div class="filter-row">
+          <label>Sıralama</label>
+          <select id="sort-col" onchange="applyFilters()"><option value="">— yok —</option></select>
+        </div>
+        <div class="filter-row">
+          <label>Yön</label>
+          <select id="sort-dir" onchange="applyFilters()"><option value="asc">A→Z / küçük→büyük</option><option value="desc">Z→A / büyük→küçük</option></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div id="main">
+
+      <!-- TABS -->
+      <div id="tabs">
+        <div class="tab active" onclick="switchTab('eda')">📊 Genel Analiz</div>
+        <div class="tab" onclick="switchTab('anomaly')">⚠️ Anomaliler</div>
+        <div class="tab" onclick="switchTab('charts')">📈 Grafikler</div>
+        <div class="tab" onclick="switchTab('chat')">💬 AI Sohbet</div>
+        <div class="tab" onclick="switchTab('viz')">✨ Görsel Öneriler</div>
+      </div>
+
+      <!-- EDA PANEL -->
+      <div class="tab-panel active" id="panel-eda">
+        <div id="eda-empty" class="empty">
+          <div class="empty-icon">🔍</div>
+          <h3>Henüz veri yüklenmedi</h3>
+          <p>Sol panelden CSV veya Excel dosyan yükle, AI otomatik analiz yapsın.</p>
+        </div>
+        <div id="eda-content" style="display:none">
+          <div class="sec-header">
+            <h2>Veri özeti</h2>
+            <span class="badge badge-blue" id="eda-badge">0 satır</span>
+          </div>
+          <div class="stat-grid" id="stat-grid"></div>
+
+          <div class="sec-header"><h2>Sütun istatistikleri</h2></div>
+          <div class="table-wrap">
+            <table id="col-stats-table">
+              <thead><tr><th>Sütun</th><th>Tür</th><th>Benzersiz</th><th>Eksik</th><th>Min</th><th>Max</th><th>Ort.</th></tr></thead>
+              <tbody id="col-stats-body"></tbody>
+            </table>
+          </div>
+
+          <div class="sec-header"><h2>Eksik veri haritası</h2></div>
+          <div id="missing-map" style="margin-bottom:20px"></div>
+
+          <div class="sec-header">
+            <h2>AI içgörüleri</h2>
+            <button class="run-btn" id="insight-btn" onclick="runInsights()">▶ AI ile analiz et</button>
+          </div>
+          <div id="insight-loading" style="display:none" class="ai-loading"><div class="spinner"></div> AI veriyi inceliyor...</div>
+          <div class="insight-list" id="insight-list"></div>
+
+          <div class="sec-header"><h2>Veri önizleme</h2></div>
+          <div class="table-wrap" id="preview-table-wrap">
+            <table id="preview-table"></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANOMALY PANEL -->
+      <div class="tab-panel" id="panel-anomaly">
+        <div id="anomaly-empty" class="empty">
+          <div class="empty-icon">⚠️</div>
+          <h3>Veri yükle ve analiz başlat</h3>
+          <p>Anomali tespiti için önce veri yükleyin.</p>
+        </div>
+        <div id="anomaly-content" style="display:none">
+          <div class="sec-header">
+            <h2>Tespit edilen anomaliler</h2>
+            <button class="run-btn" id="anomaly-btn" onclick="runAnomalyAI()">▶ AI anomali raporu</button>
+          </div>
+          <div id="anomaly-loading" style="display:none" class="ai-loading"><div class="spinner"></div> Anomaliler analiz ediliyor...</div>
+          <div id="stat-anomalies" class="anomaly-list"></div>
+          <div id="ai-anomaly-list" class="anomaly-list"></div>
+        </div>
+      </div>
+
+      <!-- CHARTS PANEL -->
+      <div class="tab-panel" id="panel-charts">
+        <div id="charts-empty" class="empty">
+          <div class="empty-icon">📈</div>
+          <h3>Veri yükle</h3>
+          <p>Grafikler otomatik oluşturulacak.</p>
+        </div>
+        <div id="charts-content" style="display:none">
+          <div class="sec-header"><h2>Otomatik grafikler</h2></div>
+          <div class="chart-grid" id="chart-grid"></div>
+        </div>
+      </div>
+
+      <!-- CHAT PANEL -->
+      <div class="tab-panel" id="panel-chat">
+        <div id="chat-wrap">
+          <div id="chat-messages">
+            <div class="msg ai">
+              <div class="msg-avatar">AI</div>
+              <div class="msg-bubble">Merhaba! Ben veri dedektifiyim. Verin hakkında doğal dilde soru sorabilirsin. Örneğin: "Hangi sütunda en çok eksik veri var?", "Ortalama değer nedir?", "Outlier var mı?" gibi.</div>
+            </div>
+          </div>
+          <div id="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Verin hakkında bir şey sor..." onkeydown="if(event.key==='Enter')sendChat()" />
+            <button id="chat-send" onclick="sendChat()">Gönder</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIZ SUGGESTIONS PANEL -->
+      <div class="tab-panel" id="panel-viz">
+        <div id="viz-empty" class="empty">
+          <div class="empty-icon">✨</div>
+          <h3>Veri yükle</h3>
+          <p>AI veri yapısına göre görselleştirme önerecek.</p>
+        </div>
+        <div id="viz-content" style="display:none">
+          <div class="sec-header">
+            <h2>Görselleştirme önerileri</h2>
+            <button class="run-btn" id="viz-btn" onclick="runVizSuggestions()">▶ AI önerisi al</button>
+          </div>
+          <div id="viz-loading" style="display:none" class="ai-loading"><div class="spinner"></div> En iyi görseller seçiliyor...</div>
+          <div class="viz-grid" id="viz-grid"></div>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<script>
+let rawData = [], filteredData = [], columns = [], colTypes = {};
+let selectedCols = new Set();
+let charts = {};
+
+// ── FILE LOADING ──────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+}
+
+function loadFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') {
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true, dynamicTyping: true,
+      complete: r => initData(r.data, r.meta.fields, file.name)
+    });
+  } else {
+    alert('Şu an yalnızca CSV destekleniyor. Excel desteği yakında!');
+  }
+}
+
+function initData(data, fields, name) {
+  rawData = data;
+  columns = fields || Object.keys(data[0] || {});
+  detectTypes();
+  applyFilters();
+  updateSidebar(name);
+  renderEDA();
+  renderCharts();
+  renderVizEmpty();
+  document.getElementById('file-status').textContent = name;
+  document.getElementById('status-dot').classList.add('ready');
+  document.getElementById('chat-messages').innerHTML = `
+    <div class="msg ai"><div class="msg-avatar">AI</div>
+    <div class="msg-bubble">Harika! <strong>${name}</strong> yüklendi — ${rawData.length} satır, ${columns.length} sütun. Sana nasıl yardımcı olabilirim?</div></div>`;
+}
+
+function detectTypes() {
+  colTypes = {};
+  columns.forEach(c => {
+    const vals = rawData.map(r => r[c]).filter(v => v !== null && v !== undefined && v !== '');
+    const nums = vals.filter(v => typeof v === 'number' || !isNaN(Number(v)));
+    if (nums.length / (vals.length || 1) > 0.8) colTypes[c] = 'num';
+    else if (vals.some(v => /^\d{4}-\d{2}-\d{2}/.test(String(v)))) colTypes[c] = 'date';
+    else colTypes[c] = 'str';
+  });
+}
+
+function applyFilters() {
+  const limit = parseInt(document.getElementById('row-limit')?.value || 200);
+  const sc = document.getElementById('sort-col')?.value;
+  const sd = document.getElementById('sort-dir')?.value || 'asc';
+  let d = [...rawData];
+  if (sc) d.sort((a, b) => {
+    const va = a[sc], vb = b[sc];
+    if (va == null) return 1; if (vb == null) return -1;
+    return sd === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+  });
+  filteredData = d.slice(0, limit);
+  if (rawData.length > 0) renderPreviewTable();
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────────
+function updateSidebar(name) {
+  document.getElementById('col-section').style.display = '';
+  document.getElementById('filter-section').style.display = '';
+  document.getElementById('col-count').textContent = `(${columns.length})`;
+
+  const cl = document.getElementById('col-list');
+  cl.innerHTML = '';
+  columns.forEach(c => {
+    selectedCols.add(c);
+    const el = document.createElement('div');
+    el.className = 'col-item selected';
+    el.innerHTML = `<span class="col-name">${c}</span><span class="col-type type-${colTypes[c]}">${colTypes[c]}</span>`;
+    el.onclick = () => { el.classList.toggle('selected'); if(el.classList.contains('selected')) selectedCols.add(c); else selectedCols.delete(c); applyFilters(); };
+    cl.appendChild(el);
+  });
+
+  const sc = document.getElementById('sort-col');
+  sc.innerHTML = '<option value="">— yok —</option>';
+  columns.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sc.appendChild(o); });
+}
+
+// ── EDA ───────────────────────────────────────────────────────────
+function renderEDA() {
+  document.getElementById('eda-empty').style.display = 'none';
+  document.getElementById('eda-content').style.display = '';
+  document.getElementById('anomaly-empty').style.display = 'none';
+  document.getElementById('anomaly-content').style.display = '';
+  document.getElementById('charts-empty').style.display = 'none';
+  document.getElementById('charts-content').style.display = '';
+  document.getElementById('viz-empty').style.display = 'none';
+  document.getElementById('viz-content').style.display = '';
+
+  const n = rawData.length;
+  const nc = columns.length;
+  let totalMissing = 0;
+  columns.forEach(c => { totalMissing += rawData.filter(r => r[c] === null || r[c] === undefined || r[c] === '').length; });
+  const missPct = n * nc > 0 ? ((totalMissing / (n * nc)) * 100).toFixed(1) : 0;
+  const numCols = columns.filter(c => colTypes[c] === 'num').length;
+
+  document.getElementById('eda-badge').textContent = `${n} satır × ${nc} sütun`;
+  document.getElementById('stat-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Toplam satır</div><div class="stat-val">${n.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">Sütun sayısı</div><div class="stat-val">${nc}</div></div>
+    <div class="stat-card"><div class="stat-label">Sayısal sütun</div><div class="stat-val green">${numCols}</div></div>
+    <div class="stat-card"><div class="stat-label">Eksik veri</div><div class="stat-val ${missPct > 10 ? 'red' : missPct > 3 ? 'amber' : 'green'}">${missPct}%</div></div>
+    <div class="stat-card"><div class="stat-label">Toplam hücre</div><div class="stat-val">${(n*nc).toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">Tekil satır</div><div class="stat-val">${new Set(rawData.map(r=>JSON.stringify(r))).size.toLocaleString()}</div></div>
+  `;
+
+  // Col stats
+  const tbody = document.getElementById('col-stats-body');
+  tbody.innerHTML = '';
+  columns.forEach(c => {
+    const vals = rawData.map(r => r[c]);
+    const missing = vals.filter(v => v === null || v === undefined || v === '').length;
+    const unique = new Set(vals.filter(v => v !== null && v !== undefined && v !== '')).size;
+    const nums = vals.filter(v => typeof v === 'number' || (!isNaN(Number(v)) && v !== ''));
+    let mn='—', mx='—', avg='—';
+    if (nums.length > 0) {
+      const ns = nums.map(Number);
+      mn = Math.min(...ns).toLocaleString(undefined, {maximumFractionDigits:2});
+      mx = Math.max(...ns).toLocaleString(undefined, {maximumFractionDigits:2});
+      avg = (ns.reduce((a,b)=>a+b,0)/ns.length).toLocaleString(undefined, {maximumFractionDigits:2});
+    }
+    const missPct2 = ((missing/vals.length)*100).toFixed(1);
+    tbody.innerHTML += `<tr>
+      <td><span style="font-family:var(--mono);font-size:12px">${c}</span></td>
+      <td><span class="col-type type-${colTypes[c]}">${colTypes[c]}</span></td>
+      <td>${unique}</td>
+      <td class="${missing>0?'anomaly-cell':''}">${missing} <span style="color:var(--text3);font-size:11px">(${missPct2}%)</span></td>
+      <td>${mn}</td><td>${mx}</td><td>${avg}</td>
+    </tr>`;
+  });
+
+  // Missing map
+  const mm = document.getElementById('missing-map');
+  mm.innerHTML = '';
+  columns.forEach(c => {
+    const missing = rawData.filter(r => r[c] === null || r[c] === undefined || r[c] === '').length;
+    const pct = (missing / rawData.length * 100).toFixed(1);
+    const fill = missing === 0 ? '#3ecf8e' : pct > 20 ? '#e25555' : '#f5a623';
+    mm.innerHTML += `<div class="miss-bar-wrap">
+      <span class="miss-col" title="${c}">${c}</span>
+      <div class="miss-bar"><div class="miss-fill" style="width:${pct}%;background:${fill}"></div></div>
+      <span class="miss-pct">${pct}%</span>
+    </div>`;
+  });
+
+  renderPreviewTable();
+  renderStatAnomalies();
+}
+
+function renderPreviewTable() {
+  const visibleCols = columns.filter(c => selectedCols.has(c));
+  const t = document.getElementById('preview-table');
+  t.innerHTML = `<thead><tr>${visibleCols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>`;
+  const tb = document.createElement('tbody');
+  filteredData.slice(0, 50).forEach(row => {
+    const tr = document.createElement('tr');
+    visibleCols.forEach(c => {
+      const v = row[c];
+      const td = document.createElement('td');
+      if (v === null || v === undefined || v === '') { td.className = 'null-cell'; td.textContent = 'null'; }
+      else td.textContent = v;
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+}
+
+// ── ANOMALIES (statistical) ────────────────────────────────────────
+function renderStatAnomalies() {
+  const list = document.getElementById('stat-anomalies');
+  list.innerHTML = '';
+  const anomalies = [];
+
+  // Duplicate rows
+  const seen = new Set(); let dupes = 0;
+  rawData.forEach(r => { const k = JSON.stringify(r); if (seen.has(k)) dupes++; else seen.add(k); });
+  if (dupes > 0) anomalies.push({icon:'🔁', title:'Tekrar eden satırlar', desc:`${dupes} adet tam kopya satır tespit edildi.`, sev: dupes > rawData.length*0.05 ? 'high' : 'med'});
+
+  // High missing columns
+  columns.forEach(c => {
+    const missing = rawData.filter(r => r[c] === null || r[c] === undefined || r[c] === '').length;
+    const pct = (missing / rawData.length * 100).toFixed(1);
+    if (pct > 30) anomalies.push({icon:'🕳️', title:`Yüksek eksik: ${c}`, desc:`${c} sütununda %${pct} oranında eksik değer var.`, sev:'high'});
+    else if (pct > 10) anomalies.push({icon:'⚠️', title:`Orta eksik: ${c}`, desc:`${c} sütununda %${pct} eksik değer.`, sev:'med'});
+  });
+
+  // Outliers (IQR method)
+  columns.filter(c => colTypes[c] === 'num').forEach(c => {
+    const vals = rawData.map(r => Number(r[c])).filter(v => !isNaN(v)).sort((a,b)=>a-b);
+    if (vals.length < 4) return;
+    const q1 = vals[Math.floor(vals.length*0.25)];
+    const q3 = vals[Math.floor(vals.length*0.75)];
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5*iqr, upper = q3 + 1.5*iqr;
+    const outliers = vals.filter(v => v < lower || v > upper);
+    if (outliers.length > 0) anomalies.push({icon:'📡', title:`Outlier: ${c}`, desc:`${outliers.length} aykırı değer tespit edildi. Aralık dışı: < ${lower.toFixed(2)} veya > ${upper.toFixed(2)}.`, sev: outliers.length > 5 ? 'high' : 'low'});
+  });
+
+  if (anomalies.length === 0) {
+    list.innerHTML = '<div class="anomaly-card"><div class="anomaly-icon">✅</div><div><div class="anomaly-title">İstatistiksel anomali bulunamadı</div><div class="anomaly-desc">Temel istatistiksel kontroller temiz görünüyor.</div></div></div>';
+  } else {
+    anomalies.forEach(a => {
+      list.innerHTML += `<div class="anomaly-card">
+        <div class="anomaly-icon">${a.icon}</div>
+        <div><div class="anomaly-title">${a.title} <span class="severity sev-${a.sev}">${a.sev === 'high' ? 'yüksek' : a.sev === 'med' ? 'orta' : 'düşük'}</span></div>
+        <div class="anomaly-desc">${a.desc}</div></div></div>`;
+    });
+  }
+}
+
+// ── AI INSIGHTS ───────────────────────────────────────────────────
+async function runInsights() {
+  if (!rawData.length) return;
+  const btn = document.getElementById('insight-btn');
+  btn.disabled = true;
+  document.getElementById('insight-loading').style.display = 'flex';
+  document.getElementById('insight-list').innerHTML = '';
+
+  const summary = buildDataSummary();
+  const prompt = `Sen bir kıdemli veri analistisin. Aşağıdaki veri setini incele ve Türkçe olarak 5-7 adet somut, uygulanabilir içgörü üret. Her içgörü "•" ile başlasın ve tek satır olsun. Sadece içgörüleri yaz, başlık veya açıklama ekleme.\n\nVeri özeti:\n${summary}`;
+
+  try {
+    const res = await callClaude(prompt);
+    const lines = res.split('\n').filter(l => l.trim().startsWith('•') || l.trim().startsWith('-'));
+    const il = document.getElementById('insight-list');
+    if (lines.length === 0) {
+      il.innerHTML = `<div class="insight-card"><div class="insight-text">${res}</div></div>`;
+    } else {
+      lines.forEach((l, i) => {
+        il.innerHTML += `<div class="insight-card"><div class="insight-text">${l.replace(/^[•\-]\s*/,'')}</div><div class="insight-meta">içgörü ${i+1}</div></div>`;
+      });
+    }
+  } catch(e) {
+    document.getElementById('insight-list').innerHTML = `<div class="insight-card"><div class="insight-text" style="color:var(--red)">API hatası: ${e.message}</div></div>`;
+  }
+  document.getElementById('insight-loading').style.display = 'none';
+  btn.disabled = false;
+}
+
+async function runAnomalyAI() {
+  if (!rawData.length) return;
+  const btn = document.getElementById('anomaly-btn');
+  btn.disabled = true;
+  document.getElementById('anomaly-loading').style.display = 'flex';
+  document.getElementById('ai-anomaly-list').innerHTML = '';
+
+  const summary = buildDataSummary();
+  const prompt = `Sen bir veri kalitesi uzmanısın. Aşağıdaki veri setinin özeti verilmiş. Olası veri kalitesi sorunlarını, anomalileri ve veri bütünlüğü risklerini Türkçe olarak analiz et. Her sorun için şu formatı kullan:\nSORUN: [başlık]\nACIKLAMA: [detay]\nCOZUM: [öneri]\n\nVeri özeti:\n${summary}`;
+
+  try {
+    const res = await callClaude(prompt);
+    const blocks = res.split(/SORUN:/i).filter(b => b.trim());
+    const al = document.getElementById('ai-anomaly-list');
+    if (blocks.length === 0) {
+      al.innerHTML = `<div class="anomaly-card"><div class="anomaly-icon">🤖</div><div><div class="anomaly-title">AI Analizi</div><div class="anomaly-desc">${res}</div></div></div>`;
+    } else {
+      blocks.forEach(b => {
+        const lines = b.split('\n').filter(l=>l.trim());
+        const title = lines[0]?.trim() || '';
+        const desc = lines.find(l=>l.startsWith('ACIKLAMA:'))?.replace('ACIKLAMA:','').trim() || '';
+        const coz = lines.find(l=>l.startsWith('COZUM:'))?.replace('COZUM:','').trim() || '';
+        al.innerHTML += `<div class="anomaly-card" style="border-color:rgba(167,139,250,0.3)">
+          <div class="anomaly-icon" style="background:rgba(167,139,250,0.15)">🤖</div>
+          <div><div class="anomaly-title">${title} <span class="severity" style="background:rgba(167,139,250,0.2);color:var(--purple)">AI</span></div>
+          <div class="anomaly-desc">${desc}</div>
+          ${coz ? `<div class="anomaly-desc" style="margin-top:4px;color:var(--green)">💡 ${coz}</div>` : ''}
+          </div></div>`;
+      });
+    }
+  } catch(e) {
+    document.getElementById('ai-anomaly-list').innerHTML = `<div class="anomaly-card"><div class="anomaly-icon">❌</div><div><div class="anomaly-desc" style="color:var(--red)">${e.message}</div></div></div>`;
+  }
+  document.getElementById('anomaly-loading').style.display = 'none';
+  btn.disabled = false;
+}
+
+// ── VIZ SUGGESTIONS ───────────────────────────────────────────────
+async function runVizSuggestions() {
+  if (!rawData.length) return;
+  const btn = document.getElementById('viz-btn');
+  btn.disabled = true;
+  document.getElementById('viz-loading').style.display = 'flex';
+  document.getElementById('viz-grid').innerHTML = '';
+
+  const summary = buildDataSummary();
+  const prompt = `Sen bir veri görselleştirme uzmanısın. Aşağıdaki veri için JSON formatında 6 görselleştirme önerisi üret. Her öneri şu yapıda olsun:\n{"type":"grafik türü","x":"x ekseni","y":"y ekseni","reason":"neden uygun (Türkçe 1 cümle)","insight":"bu grafik ne gösterir (Türkçe)"}\n\nSadece JSON array döndür, başka hiçbir şey yazma.\n\nVeri:\n${summary}`;
+
+  try {
+    const res = await callClaude(prompt);
+    const clean = res.replace(/```json|```/g,'').trim();
+    let items = JSON.parse(clean);
+    const vg = document.getElementById('viz-grid');
+    items.forEach(item => {
+      vg.innerHTML += `<div class="viz-card">
+        <div class="viz-type">${item.type}</div>
+        <div class="anomaly-title" style="font-size:13px;margin-bottom:4px">${item.x || ''} ${item.y ? '× '+item.y : ''}</div>
+        <div class="viz-desc">${item.insight}</div>
+        <div class="viz-why">${item.reason}</div>
+      </div>`;
+    });
+  } catch(e) {
+    document.getElementById('viz-grid').innerHTML = `<div class="anomaly-card"><div class="anomaly-desc" style="color:var(--red)">${e.message}</div></div>`;
+  }
+  document.getElementById('viz-loading').style.display = 'none';
+  btn.disabled = false;
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────
+function renderCharts() {
+  const cg = document.getElementById('chart-grid');
+  cg.innerHTML = '';
+  Object.values(charts).forEach(c => c.destroy?.());
+  charts = {};
+
+  const numCols = columns.filter(c => colTypes[c] === 'num');
+  const strCols = columns.filter(c => colTypes[c] === 'str');
+
+  // Distribution charts for numeric cols (max 4)
+  numCols.slice(0,4).forEach((col, i) => {
+    const vals = rawData.map(r => Number(r[col])).filter(v => !isNaN(v));
+    const bins = 15;
+    const mn = Math.min(...vals), mx = Math.max(...vals);
+    const step = (mx - mn) / bins;
+    const counts = Array(bins).fill(0);
+    const labels = [];
+    for (let b = 0; b < bins; b++) labels.push((mn + b*step).toFixed(1));
+    vals.forEach(v => { const bi = Math.min(Math.floor((v-mn)/step), bins-1); counts[bi]++; });
+
+    const id = `chart-${i}`;
+    cg.innerHTML += `<div class="chart-card"><div class="chart-title">${col} — dağılım</div><div class="chart-wrap"><canvas id="${id}"></canvas></div></div>`;
+    setTimeout(() => {
+      charts[id] = new Chart(document.getElementById(id), {
+        type:'bar', data:{ labels, datasets:[{data:counts, backgroundColor:'rgba(79,142,247,0.6)', borderColor:'rgba(79,142,247,1)', borderWidth:1}]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#8892a4',font:{size:10}}}, y:{ticks:{color:'#8892a4',font:{size:10}}} }}
+      });
+    }, 100);
+  });
+
+  // Top values for string cols
+  strCols.slice(0,2).forEach((col, i) => {
+    const freq = {};
+    rawData.forEach(r => { const v = String(r[col]||''); freq[v] = (freq[v]||0)+1; });
+    const sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const id = `chart-str-${i}`;
+    cg.innerHTML += `<div class="chart-card"><div class="chart-title">${col} — en sık değerler</div><div class="chart-wrap"><canvas id="${id}"></canvas></div></div>`;
+    setTimeout(() => {
+      charts[id] = new Chart(document.getElementById(id), {
+        type:'bar',
+        data:{ labels: sorted.map(s=>s[0].substring(0,15)), datasets:[{data:sorted.map(s=>s[1]), backgroundColor:'rgba(62,207,142,0.6)', borderColor:'rgba(62,207,142,1)', borderWidth:1}]},
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#8892a4',font:{size:10}}}, y:{ticks:{color:'#8892a4',font:{size:10}}} }}
+      });
+    }, 100);
+  });
+
+  // Scatter for first two numeric cols
+  if (numCols.length >= 2) {
+    const cx = numCols[0], cy = numCols[1];
+    const pts = rawData.slice(0,300).map(r => ({x:Number(r[cx]), y:Number(r[cy])})).filter(p=>!isNaN(p.x)&&!isNaN(p.y));
+    const id = 'chart-scatter';
+    cg.innerHTML += `<div class="chart-card"><div class="chart-title">${cx} × ${cy} — dağılım noktası</div><div class="chart-wrap"><canvas id="${id}"></canvas></div></div>`;
+    setTimeout(() => {
+      charts[id] = new Chart(document.getElementById(id), {
+        type:'scatter', data:{datasets:[{data:pts, backgroundColor:'rgba(245,166,35,0.5)', borderColor:'rgba(245,166,35,0.8)', pointRadius:3}]},
+        options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#8892a4',font:{size:10}}}, y:{ticks:{color:'#8892a4',font:{size:10}}}}}
+      });
+    }, 100);
+  }
+}
+
+// ── CHAT ──────────────────────────────────────────────────────────
+async function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const q = inp.value.trim();
+  if (!q) return;
+  if (!rawData.length) { addMsg('ai', 'Önce bir veri dosyası yükle!'); return; }
+
+  addMsg('user', q);
+  inp.value = '';
+  document.getElementById('chat-send').disabled = true;
+
+  const loadId = Date.now();
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML += `<div class="msg ai" id="load-${loadId}"><div class="msg-avatar">AI</div><div class="msg-bubble loading">Düşünüyorum...</div></div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const summary = buildDataSummary();
+  const prompt = `Sen bir kıdemli veri analistisin. Kullanıcının veri seti hakkında sorusunu Türkçe olarak kısa ve net yanıtla.\n\nVeri özeti:\n${summary}\n\nSoru: ${q}`;
+
+  try {
+    const res = await callClaude(prompt);
+    document.getElementById(`load-${loadId}`)?.remove();
+    addMsg('ai', res);
+  } catch(e) {
+    document.getElementById(`load-${loadId}`)?.remove();
+    addMsg('ai', `Hata: ${e.message}`);
+  }
+  document.getElementById('chat-send').disabled = false;
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addMsg(role, text) {
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML += `<div class="msg ${role}"><div class="msg-avatar">${role==='user'?'SEN':'AI'}</div><div class="msg-bubble">${text.replace(/\n/g,'<br>')}</div></div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function buildDataSummary() {
+  const n = rawData.length;
+  let s = `Toplam satır: ${n}, Sütun sayısı: ${columns.length}\n`;
+  s += `Sütunlar: ${columns.map(c=>`${c}(${colTypes[c]})`).join(', ')}\n`;
+  columns.filter(c=>colTypes[c]==='num').slice(0,8).forEach(c => {
+    const vals = rawData.map(r=>Number(r[c])).filter(v=>!isNaN(v));
+    if (!vals.length) return;
+    const avg = (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2);
+    s += `${c}: min=${Math.min(...vals).toFixed(2)}, max=${Math.max(...vals).toFixed(2)}, ort=${avg}\n`;
+  });
+  columns.filter(c=>colTypes[c]==='str').slice(0,4).forEach(c => {
+    const freq = {};
+    rawData.forEach(r=>{ const v=String(r[c]||''); freq[v]=(freq[v]||0)+1; });
+    const top = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]).join(', ');
+    s += `${c} (kategorik): en sık değerler = ${top}\n`;
+  });
+  const missing = columns.map(c=>({c, m: rawData.filter(r=>r[c]===null||r[c]===undefined||r[c]==='').length})).filter(x=>x.m>0);
+  if (missing.length) s += `Eksik veriler: ${missing.map(x=>`${x.c}:${x.m}`).join(', ')}\n`;
+  return s;
+}
+
+async function callClaude(prompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': 'SENIN_API_ANAHTARIN',
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!res.ok) throw new Error(`API hatası: ${res.status}`);
+  const data = await res.json();
+  return data.content.map(b => b.text || '').join('');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById(`panel-${name}`).classList.add('active');
+}
+
+function renderVizEmpty() {}
+</script>
+</body>
+</html>
